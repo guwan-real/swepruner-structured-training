@@ -1,0 +1,21 @@
+[confidence]
+patch_deleted_or_modified_line = 1.00
+mutation_original_line = 1.00
+traceback_final_project_frame = 0.95
+patch_addition_nearest_context = 0.90
+direct_control_dependency = 0.88
+direct_local_def_use = 0.88
+exception_pair = 0.85
+function_signature = 0.85
+dynamic_traceback_neighbor = 0.85
+import_dependency = 0.78
+type_dependency = 0.78
+attribute_dependency = 0.75
+one_hop_direct_call = 0.72
+one_hop_caller = 0.68
+inheritance_or_override = 0.65
+lexical_hard_negative = 0.75
+easy_negative = 0.70
+api_single_model = 0.60
+api_two_model_agreement = 0.82
+

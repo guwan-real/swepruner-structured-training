@@ -1,0 +1,42 @@
+builder_version = "0.1.0"
+confidence_file = "confidence.toml"
+
+[analysis]
+max_call_hops = 1
+max_repo_files = 300
+include_tests = true
+dynamic_call_confidence = 0.45
+
+[budget]
+max_lines = 240
+max_chars = 30000
+max_input_tokens = 7500
+min_core_lines = 1
+max_support_ratio = 0.65
+max_drop_ratio = 0.85
+hard_negative_count = 4
+
+[sampling]
+max_samples_per_task = 8
+document_negative_ratio = 0.10
+easy_drop_count = 2
+review_sample_count = 20
+
+[api]
+base_url = "https://api.llm.ustc.edu.cn/v1"
+model_primary = "qwen-chat"
+model_reviewer = "deepseek-chat"
+prompt_version = "v1"
+temperature = 0.0
+max_tokens = 500
+timeout_seconds = 60
+retry_count = 2
+local_skip_threshold = 0.90
+primary_accept_threshold = 0.85
+review_lower_threshold = 0.45
+max_candidates_per_task = 2
+
+[split]
+train_ratio = 0.80
+validation_ratio = 0.10
+test_ratio = 0.10

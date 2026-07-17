@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+.DS_Store
+.venv/
+venv/
+artifacts/*
+!artifacts/.gitkeep
+api_cache.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Large local source corpora and generated training outputs.
+data_sources/
+training/data/
+training/offline_assets/
+training/wheelhouse/
+training_outputs/
+outputs/
+
+# Model checkpoints are supplied separately on the training server.
+*.pt
+*.pth
+*.ckpt
+*.safetensors
