@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from tqdm.auto import tqdm
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, DistributedSampler
@@ -324,7 +325,14 @@ def main() -> None:
         model.train()
         started = time.time()
         sums = {name: 0.0 for name in ("total", "keep", "role", "relation", "rank", "document")}
-        for micro_step, main_batch in enumerate(train_loader):
+        progress = tqdm(
+            train_loader,
+            desc=f"train epoch {epoch + 1}/{config.epochs}",
+            disable=rank != 0,
+            dynamic_ncols=True,
+            mininterval=1.0,
+        )
+        for micro_step, main_batch in enumerate(progress):
             main_batch = move(main_batch, device)
             relation_batch = ranking_batch = None
             if relation_loader is not None and micro_step % config.relation_batch_every == 0:
@@ -376,6 +384,17 @@ def main() -> None:
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
+            if rank == 0:
+                progress.set_postfix(
+                    step=global_step,
+                    loss=f"{float(weighted.detach().item()):.4f}",
+                    lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+                )
+        if rank == 0:
+            print(
+                f"epoch {epoch + 1}/{config.epochs} training complete; evaluating validation split...",
+                flush=True,
+            )
         metrics = evaluate(model, validation_loader, device, config.threshold, config.structural_heads)
         train_metrics = {f"train_{name}": value / max(1, len(train_loader)) for name, value in sums.items()}
         record = {"epoch": epoch + 1, "global_step": global_step, "seconds": time.time() - started, **train_metrics, **metrics}
@@ -404,4 +423,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
