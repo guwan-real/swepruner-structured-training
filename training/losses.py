@@ -44,7 +44,12 @@ def main_losses(model: torch.nn.Module, outputs: dict, batch: dict) -> dict[str,
     sample_weights = (confidence * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
     keep = (per_sample * sample_weights).sum() / sample_weights.sum().clamp(min=1e-6)
     probability = outputs["document_logprob"].exp().clamp(1e-6, 1 - 1e-6)
-    document = F.binary_cross_entropy(probability, batch["document_labels"])
+    # Probability-form BCE is intentionally blocked by CUDA autocast. Keep the
+    # existing objective, but evaluate this numerically sensitive term in FP32.
+    with torch.autocast(device_type=probability.device.type, enabled=False):
+        document = F.binary_cross_entropy(
+            probability.float(), batch["document_labels"].float()
+        )
     role_logits = outputs.get("role_logits")
     relation_logits = outputs.get("relation_logits")
     role = (
@@ -78,4 +83,3 @@ def ranking_loss(
     losses = F.relu(margin - positive + negative)
     weights = batch["weights"].clamp(min=0.0)
     return (losses * weights).sum() / weights.sum().clamp(min=1e-6)
-
