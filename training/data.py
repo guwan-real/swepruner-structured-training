@@ -237,11 +237,28 @@ class BatchEncoder:
             cumulative += len(line)
             line_ends.append(cumulative)
         structural = row.get("dataset_source") != OFFICIAL_SOURCE
-        hard_id = row.get("metadata", {}).get("hard_negative", {}).get("block_id")
+        metadata = row.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        hard_negative_metadata = metadata.get("hard_negative")
+        hard_id = (
+            hard_negative_metadata.get("block_id")
+            if isinstance(hard_negative_metadata, dict)
+            else None
+        )
+        block_spans = metadata.get("block_spans")
+        if not isinstance(block_spans, list):
+            block_spans = []
         hard_spans = [
             (int(span["start_line"]), int(span["end_line"]))
-            for span in row.get("metadata", {}).get("block_spans", [])
-            if hard_id and span.get("block_id") == hard_id
+            for span in block_spans
+            if (
+                hard_id
+                and isinstance(span, dict)
+                and span.get("block_id") == hard_id
+                and "start_line" in span
+                and "end_line" in span
+            )
         ]
         keep: list[int] = []
         roles: list[int] = []
@@ -366,4 +383,3 @@ class BatchEncoder:
         ids = [value + [pad_id] * (max_len - len(value)) for value, _ in pairs]
         masks = [value + [0] * (max_len - len(value)) for _, value in pairs]
         return torch.tensor(ids, dtype=torch.long), torch.tensor(masks, dtype=torch.long)
-
