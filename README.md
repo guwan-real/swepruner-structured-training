@@ -100,7 +100,7 @@ cd swepruner-structured-training
 
 当前服务器能够联网，只是不能从本机直接上传文件。因此推荐全部资源由服务器通过 GitHub、PyPI、PyTorch 和 Hugging Face 直接下载，不需要准备 wheelhouse。
 
-B200 建议使用 Python 3.11 和 PyTorch CUDA 12.8 wheel：
+B200 建议使用 Python 3.11 和 PyTorch CUDA 13.0 wheel：
 
 ```bash
 source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -109,8 +109,8 @@ conda create -y -n swepruner-train python=3.11 pip
 conda activate swepruner-train
 
 python -m pip install --upgrade pip
-python -m pip install torch==2.11.0 \
-  --index-url https://download.pytorch.org/whl/cu128
+python -m pip install torch==2.12.1 \
+  --index-url https://download.pytorch.org/whl/cu130
 python -m pip install -r training/requirements-training.txt
 ```
 
