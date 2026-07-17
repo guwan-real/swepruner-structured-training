@@ -41,6 +41,7 @@ swepruner-structured-training/
 ├── scripts/                        # 数据构建与样本检查脚本
 ├── src/swepruner_dataset_builder/  # 数据集构建实现
 ├── tests/                          # 数据构建测试
+├── evaluation/                     # 官方服务导出与 SWE-bench 公平评测
 ├── training/
 │   ├── assets/
 │   │   └── swepruner_real_dataset_2k_seed42.tar.gz
@@ -72,7 +73,7 @@ swepruner-structured-training/
 /home/yuantao/futao
 ```
 
-新建独立工作目录并 clone 私有仓库：
+新建独立工作目录并通过 HTTPS clone 当前公开仓库：
 
 ```bash
 export BASE_DIR=/home/yuantao/futao
@@ -82,7 +83,7 @@ export PROJECT_DIR=$WORK_DIR/swepruner-structured-training
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
-git clone git@github.com:guwan-real/swepruner-structured-training.git
+git clone https://github.com/guwan-real/swepruner-structured-training.git
 cd "$PROJECT_DIR"
 
 mkdir -p "$WORK_DIR/logs" "$WORK_DIR/runs"
@@ -205,7 +206,7 @@ cd "$PROJECT_DIR"
 conda activate swepruner-train
 
 bash training/scripts/train_m1.sh 0,1,2,3 \
-  --epochs 3 \
+  --set epochs=3 \
   --output-dir "$WORK_DIR/runs/m1_data_only"
 ```
 
@@ -221,7 +222,7 @@ cd "$PROJECT_DIR"
 conda activate swepruner-train
 
 bash training/scripts/train_m2.sh 4,5,6,7 \
-  --epochs 3 \
+  --set epochs=3 \
   --output-dir "$WORK_DIR/runs/m2_structural"
 ```
 
@@ -241,13 +242,13 @@ conda activate swepruner-train
 mkdir -p "$WORK_DIR/logs" "$WORK_DIR/runs"
 
 nohup bash training/scripts/train_m1.sh 0,1,2,3 \
-  --epochs 3 \
+  --set epochs=3 \
   --output-dir "$WORK_DIR/runs/m1_data_only" \
   > "$WORK_DIR/logs/m1_data_only.log" 2>&1 &
 M1_PID=$!
 
 nohup bash training/scripts/train_m2.sh 4,5,6,7 \
-  --epochs 3 \
+  --set epochs=3 \
   --output-dir "$WORK_DIR/runs/m2_structural" \
   > "$WORK_DIR/logs/m2_structural.log" 2>&1 &
 M2_PID=$!
@@ -276,8 +277,8 @@ watch -n 2 nvidia-smi
 
 ```bash
 bash training/scripts/train_m2.sh 0,2,4,6 \
-  --epochs 5 \
-  --learning-rate 1e-5 \
+  --set epochs=5 \
+  --set learning_rate_backbone=1e-5 \
   --output-dir /home/yuantao/futao/swepruner_workspace/runs/m2_custom
 ```
 
@@ -287,7 +288,17 @@ bash training/scripts/train_m2.sh 0,2,4,6 \
 python -m training.train --help
 ```
 
-## 12. 运行前检查清单
+## 12. 导出并接入 SWE-bench
+
+训练产生的 `best_model.pt` 和 `last_model.pt` 是内部 checkpoint，不能直接传给官方 `swe-pruner` 命令。仓库提供最小迁移链路：
+
+- 将 M1/M2 checkpoint 导出为官方 `config.json + model.safetensors + tokenizer` 格式。
+- 用官方 `swe-pruner` 服务实际加载导出模型并完成一次 `/prune` 请求。
+- 现有 mini-swe-agent 无需修改代码，只需把 `pruner.url` 指向该服务。
+
+完整服务器命令见 [`evaluation/README.md`](evaluation/README.md)。
+
+## 13. 运行前检查清单
 
 - `nvidia-smi` 能看到计划使用的 B200。
 - `torch.cuda.is_available()` 返回 `True`。
@@ -298,6 +309,6 @@ python -m training.train --help
 - M1 和 M2 使用不同输出目录。
 - 并行运行时 M1/M2 使用不重叠的物理 GPU。
 
-## 13. 安全说明
+## 14. 安全说明
 
 仓库不包含 API Key。数据构建阶段如需调用 LLM API，请通过环境变量或服务器密钥管理系统注入，不要把密钥写入配置文件或提交到 Git。

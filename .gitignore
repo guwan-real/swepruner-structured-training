@@ -20,6 +20,13 @@ training/wheelhouse/
 training_outputs/
 outputs/
 
+# SWE-bench evaluation outputs and generated configs (may contain API keys).
+evaluation/models/
+evaluation/reports/
+evaluation/runs/
+evaluation/runtime/
+evaluation/tools/
+
 # Model checkpoints are supplied separately on the training server.
 *.pt
 *.pth
