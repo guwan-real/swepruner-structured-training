@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import torch
@@ -94,17 +95,16 @@ def _load_backbone(path: str, config_only: bool, implementation: str) -> nn.Modu
 
 
 def _transformer_layers(backbone: nn.Module) -> Sequence[nn.Module]:
-    candidates = (
-        ("model", "layers"),
-        ("transformer", "h"),
-        ("encoder", "layer"),
-        (None, "layers"),
-    )
-    for parent_name, child_name in candidates:
-        parent = getattr(backbone, parent_name) if parent_name else backbone
-        layers = getattr(parent, child_name, None)
-        if layers is not None:
-            return layers
+    candidates = ("layers", "model.layers", "transformer.h", "encoder.layer")
+    for path in candidates:
+        value: Any = backbone
+        try:
+            for attribute in path.split("."):
+                value = getattr(value, attribute)
+        except AttributeError:
+            continue
+        if isinstance(value, (nn.ModuleList, list, tuple)) and len(value) > 0:
+            return value
     raise ValueError("cannot locate transformer layers in backbone")
 
 
@@ -238,4 +238,3 @@ class StructuralPrunerModel(nn.Module):
             result["positive_scores"] = self._score_inputs(positive_input_ids, positive_attention_mask)
             result["negative_scores"] = self._score_inputs(negative_input_ids, negative_attention_mask)
         return result
-
