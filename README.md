@@ -114,6 +114,8 @@ python -m pip install torch==2.12.1 \
 python -m pip install -r training/requirements-training.txt
 ```
 
+`requirements-training.txt` 不固定 PyTorch 版本，避免后续依赖安装覆盖上面与服务器 CUDA 匹配的 PyTorch wheel。
+
 检查 B200 是否可用：
 
 ```bash

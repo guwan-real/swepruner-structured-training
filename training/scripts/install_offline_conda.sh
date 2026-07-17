@@ -7,7 +7,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate "$ENV_NAME"
-python -m pip install --no-index --find-links "$WHEELHOUSE" "torch==2.8.0"
+TORCH_VERSION="${TORCH_VERSION:-2.12.1}"
+python -m pip install --no-index --find-links "$WHEELHOUSE" "torch==$TORCH_VERSION"
 python -m pip install --no-index --find-links "$WHEELHOUSE" -r "$REPO_ROOT/training/requirements-runtime.txt"
 python - <<'PY'
 import torch, transformers, safetensors
@@ -16,4 +17,3 @@ print("transformers", transformers.__version__, "safetensors", safetensors.__ver
 if not torch.cuda.is_available():
     raise SystemExit("CUDA is not available in this conda environment")
 PY
-
