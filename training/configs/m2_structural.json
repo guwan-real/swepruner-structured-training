@@ -1,6 +1,7 @@
 {
   "strategy": "structural_pruner",
   "structural_heads": true,
+  "experiment_name": "m2_structural",
   "seed": 42,
   "max_length": 8192,
   "aux_max_length": 2048,
@@ -30,8 +31,8 @@
   "ranking_margin": 0.2,
   "threshold": 0.5,
   "num_workers": 2,
+  "gradient_log_every": 10,
   "save_optimizer": false,
   "instruction": "Given a query, judge if the document(code) is related to query.",
   "loss_weights": {"keep": 1.0, "role": 0.25, "relation": 0.1, "rank": 0.1, "document": 0.05}
 }
-

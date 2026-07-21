@@ -10,6 +10,7 @@ from typing import Any
 class TrainConfig:
     strategy: str
     structural_heads: bool
+    experiment_name: str = ""
     seed: int = 42
     max_length: int = 8192
     aux_max_length: int = 2048
@@ -39,6 +40,7 @@ class TrainConfig:
     ranking_margin: float = 0.20
     threshold: float = 0.50
     num_workers: int = 2
+    gradient_log_every: int = 10
     save_optimizer: bool = False
     instruction: str = "Given a query, judge if the document(code) is related to query."
     loss_weights: dict[str, float] = field(default_factory=dict)
@@ -61,6 +63,12 @@ class TrainConfig:
         required = {"keep", "role", "relation", "rank", "document"}
         if set(self.loss_weights) != required:
             raise ValueError(f"loss_weights must have exactly {sorted(required)}")
+        if self.loss_weights["keep"] <= 0:
+            raise ValueError("keep loss must be enabled for every experiment")
+        if any(weight < 0 for weight in self.loss_weights.values()):
+            raise ValueError("loss weights must be non-negative")
+        if self.gradient_log_every < 0:
+            raise ValueError("gradient_log_every must be non-negative")
         if self.strategy == "data_only":
             if self.structural_heads:
                 raise ValueError("M1 data_only must not create structural heads")
@@ -68,6 +76,13 @@ class TrainConfig:
                 raise ValueError("M1 structural losses must be zero")
         if self.strategy == "structural_pruner" and not self.structural_heads:
             raise ValueError("M2 structural_pruner requires structural heads")
+        if self.strategy == "structural_pruner" and not any(
+            self.loss_weights[name] > 0 for name in ("role", "relation", "rank")
+        ):
+            raise ValueError("structural_pruner requires at least one structural objective")
+
+    def objective_enabled(self, name: str) -> bool:
+        return self.loss_weights[name] > 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -115,5 +130,5 @@ PARITY_FIELDS = (
     "attention_implementation",
     "relation_batch_every",
     "ranking_batch_every",
+    "gradient_log_every",
 )
-

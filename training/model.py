@@ -148,11 +148,11 @@ class StructuralPrunerModel(nn.Module):
         )
         self.role_head = (
             nn.Sequential(nn.LayerNorm(self.fused_hidden_size), nn.Linear(self.fused_hidden_size, num_roles))
-            if config.structural_heads else None
+            if config.objective_enabled("role") else None
         )
         self.relation_head = (
             nn.Sequential(nn.LayerNorm(self.fused_hidden_size), nn.Linear(self.fused_hidden_size, num_relations))
-            if config.structural_heads else None
+            if config.objective_enabled("relation") else None
         )
         for parameter in self.backbone.parameters():
             parameter.requires_grad = False

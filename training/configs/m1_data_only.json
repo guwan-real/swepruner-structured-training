@@ -1,6 +1,7 @@
 {
   "strategy": "data_only",
   "structural_heads": false,
+  "experiment_name": "m1_data_only",
   "seed": 42,
   "max_length": 8192,
   "aux_max_length": 2048,
@@ -30,8 +31,8 @@
   "ranking_margin": 0.2,
   "threshold": 0.5,
   "num_workers": 2,
+  "gradient_log_every": 10,
   "save_optimizer": false,
   "instruction": "Given a query, judge if the document(code) is related to query.",
   "loss_weights": {"keep": 1.0, "role": 0.0, "relation": 0.0, "rank": 0.0, "document": 0.05}
 }
-

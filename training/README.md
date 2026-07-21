@@ -9,6 +9,45 @@ This directory implements the two controlled experiments described in the experi
 
 Both configs use seed 42, the same repository-aware splits, 1,566 main samples per epoch, 80% new-data sampling, 20% official replay, three epochs, the same maximum length and the same number of optimizer steps. Official replay rows never receive fabricated role or relation labels.
 
+## Objective ablations
+
+The implementation distinguishes independent parameter heads from training objectives:
+
+- `keep` uses the CRF compression head and is always enabled.
+- `role` has an independent role classification head.
+- `relation` has an independent relation head and uses line plus auxiliary block-relation supervision.
+- `rank` is a margin objective over the shared yes/no document score; it has no independent rank head.
+- `document` is BCE over the same yes/no document score; it has no independent document head.
+
+Disabled role/relation heads are not created. Disabled relation/rank objectives do not load their auxiliary batches or run their extra forward passes.
+
+Recommended four-run screen on physical GPUs 6 and 7:
+
+```bash
+export WORK_DIR=/home/yuantao/futao/swepruner_workspace
+
+for PRESET in b0 b1 b2 b3; do
+  bash training/scripts/train_ablation.sh "$PRESET" 6,7 \
+    --set epochs=5 \
+    --output-dir "$WORK_DIR/runs/ablation_${PRESET}"
+done
+```
+
+| Preset | Active objectives |
+|---|---|
+| `b0` | keep |
+| `b1` | keep + relation |
+| `b2` | keep + relation + role |
+| `b3` | keep + relation + role + rank + document |
+
+Additional single-objective and leave-one-out presets are available through:
+
+```bash
+bash training/scripts/train_ablation.sh --help
+```
+
+Every run records `active_objectives`, raw losses, parameter-group gradient norms, and the existing threshold curve. It also reports nearest-grid `core_recall`, actual retention and threshold at target keep ratios 50% and 55%. Rank/document do not have separate parameter groups, so their gradients appear in the shared backbone/fusion norms rather than a fictitious head norm.
+
 The model core follows the public SWE-Pruner `TokenScorer`: Qwen3-Reranker-0.6B backbone, early/middle/final hidden-state concatenation, one fusion-attention layer, CRF keep/prune head and yes/no document scorer. The loader accepts the official `best_model.pt` or Hugging Face `model.safetensors`; M2 initializes only its new role/relation heads randomly.
 
 ## 1. Dataset included in Git
@@ -53,15 +92,15 @@ Two GPUs, recommended first run:
 conda activate YOUR_ENV
 export NCCL_DEBUG=WARN
 export OMP_NUM_THREADS=8
-bash training/scripts/train_m1.sh 2
-bash training/scripts/train_m2.sh 2
+bash training/scripts/train_m1.sh 0,1
+bash training/scripts/train_m2.sh 0,1
 ```
 
 Four GPUs:
 
 ```bash
-bash training/scripts/train_m1.sh 4
-bash training/scripts/train_m2.sh 4
+bash training/scripts/train_m1.sh 0,1,2,3
+bash training/scripts/train_m2.sh 0,1,2,3
 ```
 
 Override paths when assets live elsewhere:
@@ -118,7 +157,7 @@ GPU_IDS=4,5 bash training/scripts/train_m1.sh
 GPU 参数后仍可追加训练参数，例如：
 
 ```bash
-bash training/scripts/train_m2.sh 0,2,4,6 --epochs 3 --output-dir training_outputs/m2-b200
+bash training/scripts/train_m2.sh 0,2,4,6 --set epochs=3 --output-dir training_outputs/m2-b200
 ```
 
 ## 服务器新建 conda 环境

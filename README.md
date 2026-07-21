@@ -55,6 +55,7 @@ swepruner-structured-training/
 │   │   ├── install_offline_conda.sh
 │   │   ├── train_m1.sh
 │   │   ├── train_m2.sh
+│   │   ├── train_ablation.sh
 │   │   └── unpack_dataset.sh
 │   ├── checkpoint.py               # 官方 checkpoint/HF 权重加载
 │   ├── data.py                     # 主任务、关系和排序数据读取

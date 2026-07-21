@@ -111,6 +111,14 @@ def reduce_counts(counts: torch.Tensor) -> torch.Tensor:
     return counts
 
 
+def parameter_gradient_norm(parameters: list[torch.nn.Parameter], device: torch.device) -> float:
+    squared = torch.zeros((), dtype=torch.float32, device=device)
+    for parameter in parameters:
+        if parameter.grad is not None:
+            squared += parameter.grad.detach().float().square().sum()
+    return float(squared.sqrt().item())
+
+
 @torch.no_grad()
 def evaluate(
     model: torch.nn.Module,
@@ -182,6 +190,14 @@ def evaluate(
         dist.all_reduce(curve, op=dist.ReduceOp.SUM)
     precision = counts[0] / (counts[0] + counts[1]).clamp(min=1)
     recall = counts[0] / (counts[0] + counts[2]).clamp(min=1)
+    curve_records = [
+        {
+            "threshold": value,
+            "keep_ratio": float((row[0] / row[1].clamp(min=1)).item()),
+            "core_recall": float((row[2] / row[3].clamp(min=1)).item()),
+        }
+        for value, row in zip(curve_thresholds, curve)
+    ]
     metrics = {
         "line_keep_f1": float((2 * precision * recall / (precision + recall).clamp(min=1e-12)).item()),
         "line_keep_precision": float(precision.item()),
@@ -193,15 +209,14 @@ def evaluate(
         "predicted_keep_ratio": float((counts[4] / counts[3].clamp(min=1)).item()),
         "document_accuracy": float((counts[13] / counts[14].clamp(min=1)).item()),
         "threshold": threshold,
-        "threshold_curve": [
-            {
-                "threshold": value,
-                "keep_ratio": float((row[0] / row[1].clamp(min=1)).item()),
-                "core_recall": float((row[2] / row[3].clamp(min=1)).item()),
-            }
-            for value, row in zip(curve_thresholds, curve)
-        ],
+        "threshold_curve": curve_records,
     }
+    for target_ratio in (0.50, 0.55):
+        nearest = min(curve_records, key=lambda row: abs(row["keep_ratio"] - target_ratio))
+        suffix = int(target_ratio * 100)
+        metrics[f"core_recall_at_keep_ratio_{suffix}"] = nearest["core_recall"]
+        metrics[f"actual_keep_ratio_at_{suffix}"] = nearest["keep_ratio"]
+        metrics[f"threshold_at_keep_ratio_{suffix}"] = nearest["threshold"]
     model.train()
     return metrics
 
@@ -209,6 +224,7 @@ def evaluate(
 def main() -> None:
     args = parse_args()
     config = load_train_config(args.config, args.overrides)
+    active_objectives = [name for name, weight in config.loss_weights.items() if weight > 0]
     rank, world_size, local_rank, device = setup_distributed(args.allow_cpu)
     seed_everything(config.seed, rank)
     data_root = Path(args.data_root)
@@ -273,13 +289,14 @@ def main() -> None:
     )
     relation_loader = ranking_loader = None
     relation_sampler = ranking_sampler = None
-    if config.structural_heads:
+    if config.objective_enabled("relation"):
         relation_sampler = DistributedSampler(relation_dataset, world_size, rank, shuffle=True, seed=config.seed)
-        ranking_sampler = DistributedSampler(ranking_dataset, world_size, rank, shuffle=True, seed=config.seed + 1)
         relation_loader = DataLoader(
             relation_dataset, batch_size=config.aux_batch_size, sampler=relation_sampler,
             collate_fn=encoder.collate_relation, num_workers=config.num_workers, pin_memory=True,
         )
+    if config.objective_enabled("rank"):
+        ranking_sampler = DistributedSampler(ranking_dataset, world_size, rank, shuffle=True, seed=config.seed + 1)
         ranking_loader = DataLoader(
             ranking_dataset, batch_size=config.aux_batch_size, sampler=ranking_sampler,
             collate_fn=encoder.collate_ranking, num_workers=config.num_workers, pin_memory=True,
@@ -288,6 +305,24 @@ def main() -> None:
     backbone_ids = {id(parameter) for parameter in core_model.backbone.parameters()}
     backbone_parameters = [parameter for parameter in core_model.parameters() if id(parameter) in backbone_ids and parameter.requires_grad]
     head_parameters = [parameter for parameter in core_model.parameters() if id(parameter) not in backbone_ids and parameter.requires_grad]
+    gradient_groups = {
+        "backbone": backbone_parameters,
+        "fusion": [
+            parameter
+            for module in (core_model.fusion_layers, core_model.fusion_norms)
+            for parameter in module.parameters()
+            if parameter.requires_grad
+        ],
+        "keep_head": [parameter for parameter in core_model.compression_head.parameters() if parameter.requires_grad],
+        "role_head": (
+            [parameter for parameter in core_model.role_head.parameters() if parameter.requires_grad]
+            if core_model.role_head is not None else []
+        ),
+        "relation_head": (
+            [parameter for parameter in core_model.relation_head.parameters() if parameter.requires_grad]
+            if core_model.relation_head is not None else []
+        ),
+    }
     optimizer = torch.optim.AdamW(
         [
             {"params": backbone_parameters, "lr": config.learning_rate_backbone, "weight_decay": config.weight_decay},
@@ -300,6 +335,7 @@ def main() -> None:
     if rank == 0:
         run_manifest = {
             "config": config.to_dict(),
+            "active_objectives": active_objectives,
             "world_size": world_size,
             "train_rows": len(train_dataset),
             "validation_rows": len(validation_dataset),
@@ -319,12 +355,15 @@ def main() -> None:
         train_sampler.set_epoch(epoch)
         if relation_sampler is not None:
             relation_sampler.set_epoch(epoch)
+        if ranking_sampler is not None:
             ranking_sampler.set_epoch(epoch)
         relation_iterator = iter(relation_loader) if relation_loader is not None else None
         ranking_iterator = iter(ranking_loader) if ranking_loader is not None else None
         model.train()
         started = time.time()
         sums = {name: 0.0 for name in ("total", "keep", "role", "relation", "rank", "document")}
+        gradient_sums = {name: 0.0 for name in gradient_groups}
+        gradient_samples = 0
         progress = tqdm(
             train_loader,
             desc=f"train epoch {epoch + 1}/{config.epochs}",
@@ -379,6 +418,14 @@ def main() -> None:
             for name, value in values.items():
                 sums[name] += float(value.detach().item())
             if update_now:
+                next_global_step = global_step + 1
+                log_gradients = config.gradient_log_every > 0 and (
+                    next_global_step == 1 or next_global_step % config.gradient_log_every == 0
+                )
+                if log_gradients:
+                    for name, parameters in gradient_groups.items():
+                        gradient_sums[name] += parameter_gradient_norm(parameters, device)
+                    gradient_samples += 1
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
                 optimizer.step()
                 scheduler.step()
@@ -397,7 +444,19 @@ def main() -> None:
             )
         metrics = evaluate(model, validation_loader, device, config.threshold, config.structural_heads)
         train_metrics = {f"train_{name}": value / max(1, len(train_loader)) for name, value in sums.items()}
-        record = {"epoch": epoch + 1, "global_step": global_step, "seconds": time.time() - started, **train_metrics, **metrics}
+        if gradient_samples:
+            train_metrics.update({
+                f"grad_{name}_norm": value / gradient_samples
+                for name, value in gradient_sums.items()
+            })
+        record = {
+            "epoch": epoch + 1,
+            "global_step": global_step,
+            "seconds": time.time() - started,
+            "active_objectives": active_objectives,
+            **train_metrics,
+            **metrics,
+        }
         if rank == 0:
             append_jsonl(output_dir / "metrics.jsonl", record)
             print(json.dumps(record, ensure_ascii=False), flush=True)
