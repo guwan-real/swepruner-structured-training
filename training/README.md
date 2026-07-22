@@ -48,6 +48,31 @@ bash training/scripts/train_ablation.sh --help
 
 Every run records `active_objectives`, raw losses, parameter-group gradient norms, and the existing threshold curve. It also reports nearest-grid `core_recall`, actual retention and threshold at target keep ratios 50% and 55%. Rank/document do not have separate parameter groups, so their gradients appear in the shared backbone/fusion norms rather than a fictitious head norm.
 
+## Full-backbone continued-training comparison
+
+The normal M1/M2 and ablation launchers keep `backbone_training_mode=last_n`, which freezes the backbone except for the final two transformer layers. A separate launcher tests full-parameter continued training without changing those existing commands:
+
+```bash
+export WORK_DIR=/home/yuantao/futao/swepruner_workspace
+
+for PRESET in b0 b1 b2 b3; do
+  bash training/scripts/train_full_backbone_ablation.sh "$PRESET" 4,5 \
+    --set epochs=5 \
+    --set per_device_batch_size=1 \
+    --set gradient_accumulation_steps=2 \
+    --output-dir "$WORK_DIR/runs/full_backbone_${PRESET}"
+done
+```
+
+Both paths initialize from the same official SWE-Pruner checkpoint. The controlled difference is:
+
+| Path | Backbone parameters trained | Effective batch in the two-GPU examples |
+|---|---|---:|
+| `train_ablation.sh` | final 2 transformer layers | `2 GPUs x batch 2 x accumulation 1 = 4` |
+| `train_full_backbone_ablation.sh` | entire backbone | `2 GPUs x batch 1 x accumulation 2 = 4` |
+
+The full-backbone launcher enables gradient checkpointing and uses a separate default output root, `training_outputs/full_backbone_ablations/`. It is continued training from the official model, not random initialization from scratch. With only 2K examples, random initialization would test data insufficiency more than the value of the structured objectives.
+
 The model core follows the public SWE-Pruner `TokenScorer`: Qwen3-Reranker-0.6B backbone, early/middle/final hidden-state concatenation, one fusion-attention layer, CRF keep/prune head and yes/no document scorer. The loader accepts the official `best_model.pt` or Hugging Face `model.safetensors`; M2 initializes only its new role/relation heads randomly.
 
 ## 1. Dataset included in Git

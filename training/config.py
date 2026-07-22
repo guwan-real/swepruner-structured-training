@@ -25,6 +25,7 @@ class TrainConfig:
     weight_decay: float = 0.01
     warmup_ratio: float = 0.10
     max_grad_norm: float = 1.0
+    backbone_training_mode: str = "last_n"
     num_finetune_layers: int = 2
     bottleneck: int = 256
     dropout: float = 0.4
@@ -69,6 +70,8 @@ class TrainConfig:
             raise ValueError("loss weights must be non-negative")
         if self.gradient_log_every < 0:
             raise ValueError("gradient_log_every must be non-negative")
+        if self.backbone_training_mode not in {"last_n", "full"}:
+            raise ValueError("backbone_training_mode must be 'last_n' or 'full'")
         if self.strategy == "data_only":
             if self.structural_heads:
                 raise ValueError("M1 data_only must not create structural heads")
@@ -119,6 +122,7 @@ PARITY_FIELDS = (
     "learning_rate_heads",
     "weight_decay",
     "warmup_ratio",
+    "backbone_training_mode",
     "num_finetune_layers",
     "bottleneck",
     "dropout",

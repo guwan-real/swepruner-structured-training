@@ -157,11 +157,15 @@ class StructuralPrunerModel(nn.Module):
         for parameter in self.backbone.parameters():
             parameter.requires_grad = False
         layers = _transformer_layers(self.backbone)
-        if config.num_finetune_layers > len(layers):
-            raise ValueError("num_finetune_layers exceeds backbone depth")
-        for layer in layers[len(layers) - config.num_finetune_layers :]:
-            for parameter in layer.parameters():
+        if config.backbone_training_mode == "full":
+            for parameter in self.backbone.parameters():
                 parameter.requires_grad = True
+        else:
+            if config.num_finetune_layers > len(layers):
+                raise ValueError("num_finetune_layers exceeds backbone depth")
+            for layer in layers[len(layers) - config.num_finetune_layers :]:
+                for parameter in layer.parameters():
+                    parameter.requires_grad = True
         if config.gradient_checkpointing:
             self.backbone.gradient_checkpointing_enable()
             if hasattr(self.backbone.config, "use_cache"):
