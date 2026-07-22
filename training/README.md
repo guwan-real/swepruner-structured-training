@@ -71,7 +71,7 @@ Both paths initialize from the same official SWE-Pruner checkpoint. The controll
 | `train_ablation.sh` | final 2 transformer layers | `2 GPUs x batch 2 x accumulation 1 = 4` |
 | `train_full_backbone_ablation.sh` | entire backbone | `2 GPUs x batch 1 x accumulation 2 = 4` |
 
-The full-backbone launcher enables gradient checkpointing and uses a separate default output root, `training_outputs/full_backbone_ablations/`. It is continued training from the official model, not random initialization from scratch. With only 2K examples, random initialization would test data insufficiency more than the value of the structured objectives.
+The full-backbone launcher uses a separate default output root, `training_outputs/full_backbone_ablations/`. On B200 it disables gradient checkpointing by default for higher throughput. If explicitly enabled for a smaller GPU, the implementation uses non-reentrant checkpointing so relation/rank auxiliary forwards remain compatible with DDP. It is continued training from the official model, not random initialization from scratch. With only 2K examples, random initialization would test data insufficiency more than the value of the structured objectives.
 
 The model core follows the public SWE-Pruner `TokenScorer`: Qwen3-Reranker-0.6B backbone, early/middle/final hidden-state concatenation, one fusion-attention layer, CRF keep/prune head and yes/no document scorer. The loader accepts the official `best_model.pt` or Hugging Face `model.safetensors`; M2 initializes only its new role/relation heads randomly.
 

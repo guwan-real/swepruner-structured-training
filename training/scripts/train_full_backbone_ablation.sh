@@ -24,6 +24,6 @@ echo "Preset: $PRESET"
 
 exec bash "$REPO_ROOT/training/scripts/train_ablation.sh" "$PRESET" "$GPU_LIST" \
   --set backbone_training_mode=full \
-  --set gradient_checkpointing=true \
+  --set gradient_checkpointing=false \
   --set "experiment_name=full_backbone_${PRESET}" \
   "$@"

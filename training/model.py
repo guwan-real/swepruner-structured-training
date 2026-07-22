@@ -167,7 +167,9 @@ class StructuralPrunerModel(nn.Module):
                 for parameter in layer.parameters():
                     parameter.requires_grad = True
         if config.gradient_checkpointing:
-            self.backbone.gradient_checkpointing_enable()
+            self.backbone.gradient_checkpointing_enable(
+                gradient_checkpointing_kwargs={"use_reentrant": False}
+            )
             if hasattr(self.backbone.config, "use_cache"):
                 self.backbone.config.use_cache = False
 
