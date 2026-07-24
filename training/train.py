@@ -40,7 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backbone-path", required=True)
     parser.add_argument("--backbone-config-only", action="store_true")
     parser.add_argument("--tokenizer-path", required=True)
-    parser.add_argument("--init-checkpoint", required=True)
+    parser.add_argument("--init-mode", choices=("official", "backbone"), default="official")
+    parser.add_argument("--init-checkpoint")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--set", action="append", default=[], dest="overrides")
     parser.add_argument("--allow-cpu", action="store_true")
@@ -225,6 +226,10 @@ def main() -> None:
     args = parse_args()
     config = load_train_config(args.config, args.overrides)
     active_objectives = [name for name, weight in config.loss_weights.items() if weight > 0]
+    if args.init_mode == "official" and not args.init_checkpoint:
+        raise ValueError("--init-checkpoint is required when --init-mode=official")
+    if args.init_mode == "backbone" and args.backbone_config_only:
+        raise ValueError("--init-mode=backbone requires full pretrained weights, not --backbone-config-only")
     rank, world_size, local_rank, device = setup_distributed(args.allow_cpu)
     seed_everything(config.seed, rank)
     data_root = Path(args.data_root)
@@ -263,7 +268,23 @@ def main() -> None:
         len(relation_names),
         args.backbone_config_only,
     )
-    init_report = load_official_initialization(model, args.init_checkpoint)
+    if args.init_mode == "official":
+        init_report = {
+            "mode": "official_swe_pruner_checkpoint",
+            **load_official_initialization(model, args.init_checkpoint),
+        }
+    else:
+        init_report = {
+            "mode": "pretrained_qwen_backbone",
+            "backbone": str(Path(args.backbone_path).resolve()),
+            "randomly_initialized_modules": [
+                "fusion_layers",
+                "fusion_norms",
+                "compression_head",
+                *(["role_head"] if model.role_head is not None else []),
+                *(["relation_head"] if model.relation_head is not None else []),
+            ],
+        }
     model.to(device)
     if world_size > 1:
         model = DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
@@ -345,7 +366,7 @@ def main() -> None:
             "relation_names": relation_names,
             "optimizer_steps_per_epoch": optimizer_steps_per_epoch,
             "total_optimizer_steps": total_optimizer_steps,
-            "official_initialization": init_report,
+            "initialization": init_report,
         }
         write_json(output_dir / "run_manifest.json", run_manifest)
     best_f1 = -1.0
@@ -467,7 +488,7 @@ def main() -> None:
                 "config": config.to_dict(),
                 "role_names": ROLE_NAMES,
                 "relation_names": relation_names,
-                "official_initialization": init_report,
+                "initialization": init_report,
             }
             save_model_checkpoint(output_dir / "last_model.pt", core_model, metadata)
             if metrics["line_keep_f1"] > best_f1:

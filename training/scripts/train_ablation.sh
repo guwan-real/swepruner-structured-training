@@ -106,15 +106,21 @@ export CUDA_VISIBLE_DEVICES="$GPU_LIST"
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DATA_ROOT="${DATA_ROOT:-$REPO_ROOT/training/data/upload_bundle_2k}"
-TOKENIZER_PATH="${TOKENIZER_PATH:-$REPO_ROOT/training/offline_assets/code-pruner}"
-INIT_CHECKPOINT="${INIT_CHECKPOINT:-$REPO_ROOT/training/offline_assets/code-pruner}"
-BACKBONE_PATH="${BACKBONE_PATH:-$REPO_ROOT/training/offline_assets/qwen3-reranker-config}"
+TOKENIZER_PATH="${TOKENIZER_PATH:-$REPO_ROOT/training/offline_assets/qwen3-reranker}"
+BACKBONE_PATH="${BACKBONE_PATH:-$REPO_ROOT/training/offline_assets/qwen3-reranker}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPO_ROOT/training_outputs/ablations/$PRESET}"
+
+if [[ ! -f "$BACKBONE_PATH/config.json" ]] || ! compgen -G "$BACKBONE_PATH/*.safetensors" >/dev/null; then
+  echo "Full Qwen3-Reranker weights are missing under $BACKBONE_PATH" >&2
+  echo "Run: bash training/scripts/download_assets.sh" >&2
+  exit 1
+fi
 
 export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Launching ablation $PRESET on physical GPU(s): $GPU_LIST ($NUM_GPUS process(es))"
+echo "Initialization: pretrained Qwen3-Reranker backbone (SWE-Pruner checkpoint is not loaded)"
 echo "Loss weights: $LOSS_WEIGHTS"
 echo "Output: $OUTPUT_DIR"
 
@@ -122,9 +128,8 @@ torchrun --standalone --nproc_per_node="$NUM_GPUS" -m training.train \
   --config "$REPO_ROOT/training/configs/$BASE_CONFIG" \
   --data-root "$DATA_ROOT" \
   --backbone-path "$BACKBONE_PATH" \
-  --backbone-config-only \
   --tokenizer-path "$TOKENIZER_PATH" \
-  --init-checkpoint "$INIT_CHECKPOINT" \
+  --init-mode backbone \
   --output-dir "$OUTPUT_DIR" \
   --set "experiment_name=$PRESET" \
   --set "loss_weights=$LOSS_WEIGHTS" \

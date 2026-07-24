@@ -9,6 +9,13 @@ This directory implements the two controlled experiments described in the experi
 
 Both configs use seed 42, the same repository-aware splits, 1,566 main samples per epoch, 80% new-data sampling, 20% official replay, three epochs, the same maximum length and the same number of optimizer steps. Official replay rows never receive fabricated role or relation labels.
 
+There are two intentionally separate initialization protocols:
+
+- `train_m1.sh` and `train_m2.sh` load the official SWE-Pruner checkpoint for continued-training experiments.
+- `train_ablation.sh` loads the original pretrained `Qwen/Qwen3-Reranker-0.6B` backbone and never loads SWE-Pruner weights. Fusion, CRF compression and enabled auxiliary heads start randomly initialized.
+
+The second protocol is the appropriate one for claiming that the new data/objectives can train a pruner from the same original reranker base. Do not mix checkpoints from these two protocols in one ablation table.
+
 ## Objective ablations
 
 The implementation distinguishes independent parameter heads from training objectives:
@@ -32,6 +39,14 @@ for PRESET in b0 b1 b2 b3; do
     --output-dir "$WORK_DIR/runs/ablation_${PRESET}"
 done
 ```
+
+Before the first from-backbone run, download the newly required full Qwen asset:
+
+```bash
+bash training/scripts/download_assets.sh
+```
+
+The resulting `run_manifest.json` must record `initialization.mode` as `pretrained_qwen_backbone`.
 
 | Preset | Active objectives |
 |---|---|
@@ -107,7 +122,7 @@ Transfer/extract that archive beside this repository on the server, then install
 bash training/scripts/install_offline_conda.sh YOUR_ENV training/wheelhouse
 ```
 
-`download_assets.sh` downloads only one full model, `ayanami-kitasan/code-pruner`, plus the small Qwen3-Reranker backbone `config.json`. The official checkpoint already contains the backbone weights, so a second 0.6B weight copy is unnecessary.
+`download_assets.sh` downloads two distinct full model assets: the official `ayanami-kitasan/code-pruner` checkpoint for continued-training baselines and the original `Qwen/Qwen3-Reranker-0.6B` for from-backbone experiments. The Qwen snapshot is pinned to revision `e61197ed45024b0ed8a2d74b80b4d909f1255473`.
 
 ## 3. B200 commands
 

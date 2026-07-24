@@ -144,7 +144,8 @@ PY
 ```text
 training/offline_assets/
 ├── code-pruner/                    # 官方 SWE-Pruner checkpoint 与 tokenizer
-└── qwen3-reranker-config/          # backbone 配置
+├── qwen3-reranker/                 # 原始 Qwen3-Reranker 完整权重与 tokenizer
+└── qwen3-reranker-config/          # 官方 checkpoint 初始化所需 backbone 配置
 ```
 
 依赖安装完成后，直接在服务器下载模型资源：
@@ -159,6 +160,8 @@ bash training/scripts/download_assets.sh
 ```
 
 下载完成后，`train_m1.sh` 和 `train_m2.sh` 会自动使用上述默认目录，不需要从本机上传 checkpoint 或 tokenizer。
+
+`train_ablation.sh` 默认只加载 `qwen3-reranker/` 原始权重，不会加载 `code-pruner/` checkpoint；该入口用于从相同原始基座比较 B0-B3。
 
 ## 7. 解压和筛查数据
 
