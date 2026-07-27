@@ -213,7 +213,7 @@ def apply_support(row: dict[str, Any], support_lines: list[int]) -> None:
 def main() -> None:
     args = parse_args()
     source = Path(args.data_root) / "combined" / "pruning_sft.jsonl"
-    parents = [row for row in read_jsonl(source) if row.get("dataset_source") != OFFICIAL_SOURCE]
+    parents = list(read_jsonl(source))
     parents.sort(key=lambda row: str(row["sample_id"]))
     if args.max_parent_samples > 0:
         parents = parents[: args.max_parent_samples]
