@@ -42,11 +42,28 @@ def load_split_ids(data_root: str | Path, split: str) -> set[str]:
 
 
 class MainDataset(Dataset):
-    def __init__(self, path: str | Path, sample_ids: set[str]):
-        self.rows = [row for row in read_jsonl(path) if row.get("sample_id") in sample_ids]
-        if len(self.rows) != len(sample_ids):
-            found = {row.get("sample_id") for row in self.rows}
+    def __init__(
+        self,
+        path: str | Path,
+        sample_ids: set[str],
+        augmentation_paths: Iterable[str | Path] = (),
+    ):
+        base_rows = [row for row in read_jsonl(path) if row.get("sample_id") in sample_ids]
+        if len(base_rows) != len(sample_ids):
+            found = {row.get("sample_id") for row in base_rows}
             raise ValueError(f"main dataset is missing {len(sample_ids - found)} requested sample_ids")
+        augmented = [
+            row
+            for augmentation_path in augmentation_paths
+            for row in read_jsonl(augmentation_path)
+            if row.get("parent_sample_id") in sample_ids
+        ]
+        identifiers = [str(row.get("sample_id")) for row in base_rows + augmented]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("main and augmentation datasets contain duplicate sample IDs")
+        self.rows = base_rows + augmented
+        self.base_rows = len(base_rows)
+        self.augmentation_rows = len(augmented)
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -299,6 +316,8 @@ class BatchEncoder:
             "line_indices": place(line_indices, -1),
             "hard_negative_mask": place(hard_negative, False),
             "document_labels": float(row["document_label"]),
+            "minimum_keep_ratio": float(row.get("minimum_keep_ratio", 0.0)),
+            "sample_type": str(row.get("sample_type", "source_code")),
             "sample_id": str(row["sample_id"]),
             "dataset_source": str(row["dataset_source"]),
         }
@@ -363,8 +382,12 @@ class BatchEncoder:
                 [row[field] + [fill] * (max_len - len(row[field])) for row in rows], dtype=dtype
             )
         batch["document_labels"] = torch.tensor([row["document_labels"] for row in rows], dtype=torch.float32)
+        batch["minimum_keep_ratios"] = torch.tensor(
+            [row["minimum_keep_ratio"] for row in rows], dtype=torch.float32
+        )
         batch["sample_ids"] = [row["sample_id"] for row in rows]
         batch["dataset_sources"] = [row["dataset_source"] for row in rows]
+        batch["sample_types"] = [row["sample_type"] for row in rows]
         return batch
 
     def _pad_aux(self, rows: list[dict[str, Any]]) -> dict[str, torch.Tensor]:

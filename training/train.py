@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--init-mode", choices=("official", "backbone"), default="official")
     parser.add_argument("--init-checkpoint")
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--augmentation-data", action="append", default=[])
     parser.add_argument("--set", action="append", default=[], dest="overrides")
     parser.add_argument("--allow-cpu", action="store_true")
     return parser.parse_args()
@@ -239,7 +240,7 @@ def main() -> None:
     train_ids = load_split_ids(data_root, "train")
     validation_ids = load_split_ids(data_root, "validation")
     main_path = data_root / "combined" / "pruning_sft.jsonl"
-    train_dataset = MainDataset(main_path, train_ids)
+    train_dataset = MainDataset(main_path, train_ids, args.augmentation_data)
     validation_dataset = MainDataset(main_path, validation_ids)
     relation_paths = [data_root / source / "block_relation.jsonl" for source in ("swe_smith", "swe_gym")]
     ranking_paths = [data_root / source / "block_ranking.jsonl" for source in ("swe_smith", "swe_gym")]
@@ -344,11 +345,17 @@ def main() -> None:
             if core_model.relation_head is not None else []
         ),
     }
+    optimizer_options: dict[str, Any] = {}
+    if config.fused_adamw:
+        if device.type != "cuda":
+            raise RuntimeError("fused AdamW requires CUDA")
+        optimizer_options["fused"] = True
     optimizer = torch.optim.AdamW(
         [
             {"params": backbone_parameters, "lr": config.learning_rate_backbone, "weight_decay": config.weight_decay},
             {"params": head_parameters, "lr": config.learning_rate_heads, "weight_decay": 0.0},
-        ]
+        ],
+        **optimizer_options,
     )
     optimizer_steps_per_epoch = math.ceil(len(train_loader) / config.gradient_accumulation_steps)
     total_optimizer_steps = optimizer_steps_per_epoch * config.epochs
@@ -359,6 +366,9 @@ def main() -> None:
             "active_objectives": active_objectives,
             "world_size": world_size,
             "train_rows": len(train_dataset),
+            "base_train_rows": train_dataset.base_rows,
+            "augmentation_rows": train_dataset.augmentation_rows,
+            "augmentation_data": [str(Path(path).resolve()) for path in args.augmentation_data],
             "validation_rows": len(validation_dataset),
             "relation_rows": len(relation_dataset),
             "ranking_rows": len(ranking_dataset),
@@ -382,7 +392,13 @@ def main() -> None:
         ranking_iterator = iter(ranking_loader) if ranking_loader is not None else None
         model.train()
         started = time.time()
-        sums = {name: 0.0 for name in ("total", "keep", "role", "relation", "rank", "document")}
+        sums = {
+            name: 0.0
+            for name in (
+                "total", "keep", "keep_crf", "keep_token_ce", "keep_retention",
+                "keep_catastrophic", "role", "relation", "rank", "document",
+            )
+        }
         gradient_sums = {name: 0.0 for name in gradient_groups}
         gradient_samples = 0
         progress = tqdm(
@@ -416,7 +432,7 @@ def main() -> None:
             with sync_context:
                 with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
                     outputs = model(input_ids=main_batch["input_ids"], attention_mask=main_batch["attention_mask"], **kwargs)
-                    losses = main_losses(core_model, outputs, main_batch)
+                    losses = main_losses(core_model, outputs, main_batch, config)
                     relation_aux = auxiliary_relation_loss(outputs["aux_relation_logits"], relation_batch, losses["keep"])
                     relation = 0.5 * (losses["relation_line"] + relation_aux)
                     rank_loss = ranking_loss(
@@ -434,6 +450,10 @@ def main() -> None:
                 scaled.backward()
             values = {
                 "total": weighted, "keep": losses["keep"], "role": losses["role"],
+                "keep_crf": losses["keep_crf"],
+                "keep_token_ce": losses["keep_token_ce"],
+                "keep_retention": losses["keep_retention"],
+                "keep_catastrophic": losses["keep_catastrophic"],
                 "relation": relation, "rank": rank_loss, "document": losses["document"],
             }
             for name, value in values.items():

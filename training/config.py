@@ -36,6 +36,8 @@ class TrainConfig:
     middle_layer_ratio: float = 0.50
     attention_implementation: str = "sdpa"
     gradient_checkpointing: bool = False
+    backbone_parameter_dtype: str = "bfloat16"
+    fused_adamw: bool = False
     relation_batch_every: int = 1
     ranking_batch_every: int = 1
     ranking_margin: float = 0.20
@@ -44,6 +46,11 @@ class TrainConfig:
     gradient_log_every: int = 10
     save_optimizer: bool = False
     instruction: str = "Given a query, judge if the document(code) is related to query."
+    crf_keep_weight: float = 1.0
+    token_ce_weight: float = 0.0
+    retention_loss_weight: float = 0.0
+    catastrophic_loss_weight: float = 0.0
+    max_token_class_weight: float = 5.0
     loss_weights: dict[str, float] = field(default_factory=dict)
 
     def validate(self) -> None:
@@ -72,6 +79,20 @@ class TrainConfig:
             raise ValueError("gradient_log_every must be non-negative")
         if self.backbone_training_mode not in {"last_n", "full"}:
             raise ValueError("backbone_training_mode must be 'last_n' or 'full'")
+        if self.backbone_parameter_dtype not in {"bfloat16", "float32"}:
+            raise ValueError("backbone_parameter_dtype must be bfloat16 or float32")
+        if self.backbone_training_mode == "full" and self.backbone_parameter_dtype != "float32":
+            raise ValueError("full backbone training requires float32 parameters for stable updates")
+        keep_components = (
+            self.crf_keep_weight,
+            self.token_ce_weight,
+            self.retention_loss_weight,
+            self.catastrophic_loss_weight,
+        )
+        if any(value < 0 for value in keep_components) or sum(keep_components) <= 0:
+            raise ValueError("keep-loss components must be non-negative with at least one enabled")
+        if self.max_token_class_weight < 1:
+            raise ValueError("max_token_class_weight must be at least 1")
         if self.strategy == "data_only":
             if self.structural_heads:
                 raise ValueError("M1 data_only must not create structural heads")
@@ -132,6 +153,8 @@ PARITY_FIELDS = (
     "early_layer_ratio",
     "middle_layer_ratio",
     "attention_implementation",
+    "backbone_parameter_dtype",
+    "fused_adamw",
     "relation_batch_every",
     "ranking_batch_every",
     "gradient_log_every",

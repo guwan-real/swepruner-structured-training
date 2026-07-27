@@ -78,17 +78,18 @@ class CRFCompressionHead(nn.Module):
         return self.feature_extractor(hidden)
 
 
-def _load_backbone(path: str, config_only: bool, implementation: str) -> nn.Module:
+def _load_backbone(path: str, config_only: bool, implementation: str, parameter_dtype: str) -> nn.Module:
+    dtype = torch.float32 if parameter_dtype == "float32" else torch.bfloat16
     if config_only:
         config = AutoConfig.from_pretrained(path, trust_remote_code=True, local_files_only=True)
         config._attn_implementation = implementation
         model = AutoModel.from_config(config, trust_remote_code=True)
-        return model.to(dtype=torch.bfloat16)
+        return model.to(dtype=dtype)
     return AutoModel.from_pretrained(
         path,
         trust_remote_code=True,
         local_files_only=True,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=dtype,
         attn_implementation=implementation,
         device_map=None,
     )
@@ -122,7 +123,12 @@ class StructuralPrunerModel(nn.Module):
     ):
         super().__init__()
         self.config = config
-        self.backbone = _load_backbone(backbone_path, backbone_config_only, config.attention_implementation)
+        self.backbone = _load_backbone(
+            backbone_path,
+            backbone_config_only,
+            config.attention_implementation,
+            config.backbone_parameter_dtype,
+        )
         hidden_size = int(self.backbone.config.hidden_size)
         num_layers = int(self.backbone.config.num_hidden_layers)
         self.use_multi_layer_fusion = config.use_multi_layer_fusion

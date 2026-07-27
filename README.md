@@ -60,6 +60,7 @@ swepruner-structured-training/
 │   │   └── unpack_dataset.sh
 │   ├── checkpoint.py               # 官方 checkpoint/HF 权重加载
 │   ├── data.py                     # 主任务、关系和排序数据读取
+│   ├── generate_command_outputs.py # grounded 命令输出增强数据
 │   ├── losses.py                   # M1/M2 损失
 │   ├── model.py                    # SWE-Pruner 兼容模型
 │   ├── screen.py                   # 数据与 M1/M2 公平性筛查

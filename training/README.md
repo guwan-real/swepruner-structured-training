@@ -235,3 +235,46 @@ conda activate swepruner-train
 bash training/scripts/unpack_dataset.sh
 python -m training.screen --data-root training/data/swepruner_real_dataset_2k_seed42
 ```
+
+## Qwen full-parameter V2
+
+V2 never loads SWE-Pruner weights. Qwen parameters and optimizer state remain FP32 while BF16 autocast is used for compute, and the entire Qwen backbone is trainable.
+
+| Preset | Keep objective | Command-output data |
+|---|---|---|
+| `Q0` | CRF only | no |
+| `Q1` | CRF + token CE | no |
+| `Q2` | Q1 + retention calibration | no |
+| `Q3` | Q2 + catastrophic-prune penalty | yes |
+
+Generate grounded command-output samples:
+
+```bash
+python -m training.generate_command_outputs \
+  --data-root training/data/upload_bundle_2k \
+  --output training/data/upload_bundle_2k/augmentations/command_outputs_v2.jsonl
+```
+
+Optional API enrichment only adds validated SUPPORT lines. Keys are read from `LLM_API_KEYS` as a comma-separated environment variable and are never written to samples:
+
+```bash
+export LLM_API_URL=https://api.llm.ustc.edu.cn/v1/chat/completions
+export LLM_API_MODEL=qwen-chat
+python -m training.generate_command_outputs \
+  --data-root training/data/upload_bundle_2k \
+  --output training/data/upload_bundle_2k/augmentations/command_outputs_v2.jsonl \
+  --api-max-samples 200 \
+  --api-cache training/data/upload_bundle_2k/augmentations/api_support_cache.jsonl
+```
+
+Run diagnostics sequentially:
+
+```bash
+export WORK_DIR=/home/yuantao/futao/swepruner_workspace
+for PRESET in Q0 Q1 Q2 Q3; do
+  bash training/scripts/train_qwen_v2.sh "$PRESET" 4,5 \
+    --output-dir "$WORK_DIR/runs/qwen_v2_${PRESET,,}" || break
+done
+```
+
+Do not add role/relation objectives until Q3 reduces catastrophic pruning on a held-out fixed replay set at matched retention.
